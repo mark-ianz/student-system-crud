@@ -1,26 +1,35 @@
 #!/bin/bash
 
-# Base directory to start the search
-base_dir="."
+# Function to commit a file with a specific date
+commit_file() {
+    local file="$1"
+    local date="$2"
 
-# Iterate through all files and directories recursively
-find "$base_dir" -type f | while read -r file; do
-  # Skip .git directories and files
-  if [[ "$file" == *".git"* ]]; then
-    continue
-  fi
+    # Check if the file exists and is not in .git directory
+    if [ -e "$file" ] && [[ "$file" != *.git/* ]]; then
+        git add "$file"
+        GIT_COMMITTER_DATE="$date" git commit --date="$date" -m "Committing $file based on last modified time $date"
+        echo "Committed $file with date $date"
+    fi
+}
 
-  # Get the last modified date of the file in YYYY-MM-DD format
-  last_modified_date=$(stat -c %y "$file" | cut -d ' ' -f 1)
-  
-  # Format the date for git commit (RFC 3339 format: "YYYY-MM-DDTHH:MM:SS")
-  last_modified_time=$(stat -c %y "$file" | cut -d ' ' -f 2 | cut -d '.' -f 1)
-  commit_date="$last_modified_date $last_modified_time"
+# Root directory of the project
+project_root="."
 
-  # Check if the file has been modified
-  if [[ "$last_modified_date" != "" ]]; then
-    git add "$file"
-    git commit -m "Committing $file based on last modified time $last_modified_date" --date="$commit_date"
-    echo "Committed $file with date $commit_date"
-  fi
+# Find all files (excluding those in .git directory) and commit them
+find "$project_root" -type f ! -path '*/.git/*' | while read -r file; do
+    # Get the last modified date of the file in the format required by git
+    last_modified_date=$(date -r "$file" +"%a %b %d %H:%M:%S %Y %z")
+    commit_file "$file" "$last_modified_date"
+done
+
+# Find all directories (excluding those in .git directory) and commit them
+find "$project_root" -type d ! -path '*/.git/*' | while read -r dir; do
+    # Get the last modified date of the directory (using any file in the directory)
+    # Here we use the latest modified file in the directory
+    latest_file=$(find "$dir" -type f -print0 | xargs -0 stat --format='%Y %n' | sort -n | tail -n 1 | cut -d ' ' -f 2-)
+    if [ -n "$latest_file" ]; then
+        last_modified_date=$(date -r "$latest_file" +"%a %b %d %H:%M:%S %Y %z")
+        commit_file "$dir" "$last_modified_date"
+    fi
 done
